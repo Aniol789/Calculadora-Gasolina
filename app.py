@@ -44,8 +44,6 @@ def require_app_access() -> None:
     try:
         password = st.secrets["app"]["access_password"]
     except (KeyError, StreamlitSecretNotFoundError):
-        if SUPABASE is None:
-            return
         st.error("Falta configurar la contrasenya d'accés als secrets de Streamlit.")
         st.stop()
     if not password:

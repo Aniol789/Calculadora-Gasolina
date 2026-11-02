@@ -9,6 +9,8 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
+Abans d'iniciar-la, crea `.streamlit/secrets.toml` a partir de [`.streamlit/secrets.toml.example`](./.streamlit/secrets.toml.example) i defineix una contrasenya llarga i única. L'aplicació no s'obre sense aquesta contrasenya.
+
 Per usar-la des del mòbil connectat a la mateixa Wi-Fi, inicia-la amb:
 
 ```powershell
