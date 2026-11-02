@@ -39,11 +39,13 @@ SUPABASE = get_supabase_client()
 
 
 def require_app_access() -> None:
-    if SUPABASE is None or st.session_state.get("authenticated"):
+    if st.session_state.get("authenticated"):
         return
     try:
         password = st.secrets["app"]["access_password"]
     except (KeyError, StreamlitSecretNotFoundError):
+        if SUPABASE is None:
+            return
         st.error("Falta configurar la contrasenya d'accés als secrets de Streamlit.")
         st.stop()
     if not password:
