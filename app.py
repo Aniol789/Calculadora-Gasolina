@@ -11,6 +11,8 @@ import streamlit as st
 from streamlit.errors import StreamlitSecretNotFoundError
 from supabase import Client, create_client
 
+from refill_storage import delete_refill
+
 
 st.set_page_config(page_title="Control de combustible", page_icon="⛽", layout="wide")
 
@@ -120,7 +122,7 @@ def save_refills(data: pd.DataFrame) -> None:
 def add_consumption(data: pd.DataFrame) -> pd.DataFrame:
     """Calculate L/100 km between two full-tank fuel stops for each car."""
     data = data.sort_values(["cotxe", "data", "quilometratge"]).copy()
-    data["consum_l_100"] = pd.NA
+    data["consum_l_100"] = float("nan")
     for _, group in data.groupby("cotxe"):
         previous_full_odometer: float | None = None
         for index, row in group.iterrows():
@@ -169,6 +171,13 @@ st.caption(
     if SUPABASE is not None
     else "Una llibreta de repostatges senzilla, guardada al teu dispositiu."
 )
+
+deletion_feedback = st.session_state.pop("refill_deletion_feedback", None)
+if deletion_feedback is not None:
+    if deletion_feedback["success"]:
+        st.success(deletion_feedback["message"])
+    else:
+        st.error(deletion_feedback["message"])
 
 tab_add, tab_summary, tab_history = st.tabs(["➕ Nou repostatge", "📊 Resum", "🧾 Historial"])
 
@@ -244,10 +253,72 @@ with tab_history:
     if data.empty:
         st.info("No hi ha dades per mostrar.")
     else:
-        view = data.sort_values("data", ascending=False).copy()
+        history = data.sort_values("data", ascending=False).copy()
+        view = history.copy()
         view["data"] = view["data"].dt.strftime("%d/%m/%Y")
         view["consum_l_100"] = view["consum_l_100"].round(2)
         st.dataframe(view[["data", "cotxe", "quilometratge", "litres", "preu_litre", "cost_total", "consum_l_100", "notes"]],
                      use_container_width=True, hide_index=True,
                      column_config={"data": "Data", "cotxe": "Cotxe", "quilometratge": "Km", "litres": "Litres", "preu_litre": "€/L", "cost_total": st.column_config.NumberColumn("Cost", format="%.2f €"), "consum_l_100": st.column_config.NumberColumn("L/100 km", format="%.2f"), "notes": "Notes"})
         st.download_button("Descarrega les dades (CSV)", data.drop(columns=["consum_l_100"]).to_csv(index=False).encode("utf-8"), "repostatges.csv", "text/csv", use_container_width=True)
+
+        refill_by_id = {int(row["id"]): row for _, row in history.iterrows()}
+
+        def refill_label(refill_id: int) -> str:
+            refill = refill_by_id[refill_id]
+            refill_date = pd.to_datetime(refill["data"]).strftime("%d/%m/%Y")
+            return (
+                f"{refill_date} · {refill['cotxe']} · {refill['litres']:.2f} L · "
+                f"{euro(float(refill['cost_total']))} · {refill['quilometratge']:g} km"
+            )
+
+        with st.expander("Elimina un repostatge"):
+            selected_refill_id = st.selectbox(
+                "Repostatge",
+                options=list(refill_by_id),
+                format_func=refill_label,
+                key="refill_to_delete",
+            )
+            if st.button("Continua per eliminar", key="start_refill_deletion"):
+                st.session_state["pending_refill_deletion"] = selected_refill_id
+
+            pending_refill_id = st.session_state.get("pending_refill_deletion")
+            if pending_refill_id is not None:
+                pending_refill = refill_by_id.get(pending_refill_id)
+                if pending_refill is None:
+                    st.session_state.pop("pending_refill_deletion", None)
+                    st.warning("Aquest repostatge ja no és a l’historial. Actualitza la pàgina i torna-ho a provar.")
+                else:
+                    st.warning(
+                        "Confirma que vols eliminar definitivament aquest repostatge:\n\n"
+                        f"**{refill_label(pending_refill_id)}**"
+                    )
+                    confirm_column, cancel_column = st.columns(2)
+                    if confirm_column.button(
+                        "Confirma l’eliminació",
+                        type="primary",
+                        key="confirm_refill_deletion",
+                        use_container_width=True,
+                    ):
+                        try:
+                            delete_refill(
+                                pending_refill_id,
+                                REFILLS_FILE,
+                                SUPABASE,
+                            )
+                        except Exception as exc:
+                            st.error(f"No s’ha pogut eliminar el repostatge: {exc}")
+                        else:
+                            st.session_state.pop("pending_refill_deletion", None)
+                            st.session_state["refill_deletion_feedback"] = {
+                                "success": True,
+                                "message": "Repostatge eliminat correctament.",
+                            }
+                            st.rerun()
+                    if cancel_column.button(
+                        "Cancel·la",
+                        key="cancel_refill_deletion",
+                        use_container_width=True,
+                    ):
+                        st.session_state.pop("pending_refill_deletion", None)
+                        st.rerun()

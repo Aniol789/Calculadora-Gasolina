@@ -37,6 +37,10 @@ Quan Supabase està configurat, els cotxes i repostatges es desen a la base de d
 
 Obre l'enllaç de l'aplicació desplegada al navegador del mòbil i inicia sessió a Streamlit si l'aplicació és privada. A Android, obre el menú del navegador i tria **Afegeix a la pantalla d'inici** o **Instal·la l'aplicació**. A iPhone, obre l'enllaç amb Safari, toca **Compartir** i tria **Afegeix a la pantalla d'inici**. Això crea una icona d'accés directe; l'aplicació continua funcionant en línia.
 
+## Eliminació segura de repostatges
+
+A la pestanya **Historial**, obre **Elimina un repostatge** i selecciona el registre. L'aplicació mostra la data, el cotxe, els litres, el cost i el quilometratge abans de demanar una segona confirmació. Després d'eliminar-lo, verifica que el registre ja no es troba al fitxer local o a Supabase i torna a carregar l'historial. L'operació és definitiva.
+
 ## Com es calcula el consum
 
 El consum en L/100 km només apareix entre dos repostatges marcats com a “He omplert el dipòsit”: litres del segon repostatge ÷ quilòmetres recorreguts × 100.
