@@ -6,7 +6,7 @@ from typing import cast
 import pandas as pd
 from supabase import Client
 
-from refill_storage import delete_refill
+from refill_storage import add_refill_distances, delete_refill, latest_odometer
 
 
 class FakeQuery:
@@ -106,6 +106,35 @@ class DeleteRefillTests(unittest.TestCase):
             delete_refill(101, Path("unused.csv"), cast(Client, supabase))
 
         self.assertEqual(supabase.refill_ids, {101})
+
+
+class RefillDistanceTests(unittest.TestCase):
+    def test_distance_is_calculated_per_car_from_odometer_readings(self) -> None:
+        refills = pd.DataFrame([
+            {"data": "2026-10-01", "cotxe": "Cotxe 1", "quilometratge": 10000},
+            {"data": "2026-10-03", "cotxe": "Cotxe 2", "quilometratge": 5000},
+            {"data": "2026-10-08", "cotxe": "Cotxe 1", "quilometratge": 10500},
+            {"data": "2026-10-10", "cotxe": "Cotxe 2", "quilometratge": 5400},
+        ])
+
+        result = add_refill_distances(refills)
+        distances = result.set_index(["cotxe", "quilometratge"])["km_des_de_repostatge"]
+
+        self.assertTrue(pd.isna(distances.loc[("Cotxe 1", 10000)]))
+        self.assertEqual(distances.loc[("Cotxe 1", 10500)], 500)
+        self.assertTrue(pd.isna(distances.loc[("Cotxe 2", 5000)]))
+        self.assertEqual(distances.loc[("Cotxe 2", 5400)], 400)
+
+    def test_latest_odometer_is_car_specific_and_empty_car_starts_at_zero(self) -> None:
+        refills = pd.DataFrame([
+            {"cotxe": "Cotxe 1", "quilometratge": 10500},
+            {"cotxe": "Cotxe 2", "quilometratge": 5400},
+            {"cotxe": "Cotxe 1", "quilometratge": 10000},
+        ])
+
+        self.assertEqual(latest_odometer(refills, "Cotxe 1"), 10500)
+        self.assertEqual(latest_odometer(refills, "Cotxe 2"), 5400)
+        self.assertEqual(latest_odometer(refills, "Cotxe 3"), 0)
 
 
 if __name__ == "__main__":

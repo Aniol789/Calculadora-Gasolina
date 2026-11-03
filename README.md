@@ -43,4 +43,4 @@ A la pestanya **Historial**, obre **Elimina un repostatge** i selecciona el regi
 
 ## Com es calcula el consum
 
-El consum en L/100 km només apareix entre dos repostatges marcats com a “He omplert el dipòsit”: litres del segon repostatge ÷ quilòmetres recorreguts × 100.
+Introdueix la lectura total del comptaquilòmetres a cada repostatge. L'aplicació recorda l'última lectura de cada cotxe, mostra la diferència i la calcula automàticament a l'historial. El consum en L/100 km només apareix entre dos repostatges marcats com a “He omplert el dipòsit”: litres del segon repostatge ÷ quilòmetres recorreguts × 100.

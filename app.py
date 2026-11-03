@@ -11,7 +11,7 @@ import streamlit as st
 from streamlit.errors import StreamlitSecretNotFoundError
 from supabase import Client, create_client
 
-from refill_storage import delete_refill
+from refill_storage import add_refill_distances, delete_refill, latest_odometer
 
 
 st.set_page_config(page_title="Control de combustible", page_icon="⛽", layout="wide")
@@ -120,8 +120,8 @@ def save_refills(data: pd.DataFrame) -> None:
 
 
 def add_consumption(data: pd.DataFrame) -> pd.DataFrame:
-    """Calculate L/100 km between two full-tank fuel stops for each car."""
-    data = data.sort_values(["cotxe", "data", "quilometratge"]).copy()
+    """Calculate distance between refills and L/100 km between full-tank refills."""
+    data = add_refill_distances(data)
     data["consum_l_100"] = float("nan")
     for _, group in data.groupby("cotxe"):
         previous_full_odometer: float | None = None
@@ -179,18 +179,39 @@ if deletion_feedback is not None:
     else:
         st.error(deletion_feedback["message"])
 
+save_feedback = st.session_state.pop("refill_save_feedback", None)
+if save_feedback is not None:
+    st.success(save_feedback)
+
 tab_add, tab_summary, tab_history = st.tabs(["➕ Nou repostatge", "📊 Resum", "🧾 Historial"])
 
 with tab_add:
     st.subheader("Registra un repostatge")
+    refills_for_entry = load_refills()
+    car = st.selectbox("Cotxe", cars, key="new_refill_car")
+    car_refills = refills_for_entry.loc[refills_for_entry["cotxe"].eq(car)]
+    previous_odometer = latest_odometer(refills_for_entry, car)
+    if car_refills.empty:
+        st.caption("Primer repostatge d’aquest cotxe.")
+    else:
+        st.caption(f"Últim quilometratge registrat: **{previous_odometer:,} km**.")
+    odometer = st.number_input(
+        "Quilometratge actual (km)",
+        min_value=previous_odometer,
+        value=previous_odometer,
+        step=1,
+        key=f"new_refill_odometer_{car}",
+    )
+    distance_since_refill = int(odometer) - previous_odometer
+    if not car_refills.empty:
+        st.info(f"Quilòmetres des de l’últim repostatge: **{distance_since_refill:,} km**")
+
     with st.form("new_refill", clear_on_submit=True):
-        car = st.selectbox("Cotxe", cars)
         first, second = st.columns(2)
         with first:
             refill_date = st.date_input("Data", value=date.today(), format="DD/MM/YYYY")
             litres = st.number_input("Litres", min_value=0.01, step=0.01, format="%.2f")
         with second:
-            odometer = st.number_input("Quilometratge (km)", min_value=0, step=1)
             price_per_litre = st.number_input("Preu per litre (€)", min_value=0.001, step=0.001, format="%.3f")
         full_tank = st.checkbox("He omplert el dipòsit", value=True, help="Necessari per calcular correctament el consum.")
         notes = st.text_input("Notes (opcional)", placeholder="Ex.: viatge a Girona")
@@ -199,8 +220,14 @@ with tab_add:
         submitted = st.form_submit_button("Desa el repostatge", type="primary", use_container_width=True)
     if submitted:
         data = load_refills()
+        current_latest_odometer = latest_odometer(data, car)
         duplicate = (data["cotxe"].eq(car) & data["quilometratge"].eq(odometer)).any() if not data.empty else False
-        if duplicate:
+        if odometer < current_latest_odometer:
+            st.error(
+                f"El quilometratge ha de ser com a mínim l’última lectura registrada: "
+                f"{current_latest_odometer:,} km."
+            )
+        elif duplicate:
             st.error("Ja hi ha un repostatge d’aquest cotxe amb aquest quilometratge.")
         else:
             new_row = pd.DataFrame([{
@@ -209,7 +236,8 @@ with tab_add:
                 "cost_total": total, "diposit_ple": full_tank, "notes": notes,
             }])
             save_refills(pd.concat([data, new_row], ignore_index=True))
-            st.success("Repostatge desat correctament.")
+            st.session_state["refill_save_feedback"] = "Repostatge desat correctament."
+            st.rerun()
 
 with tab_summary:
     data = add_consumption(load_refills())
@@ -257,9 +285,9 @@ with tab_history:
         view = history.copy()
         view["data"] = view["data"].dt.strftime("%d/%m/%Y")
         view["consum_l_100"] = view["consum_l_100"].round(2)
-        st.dataframe(view[["data", "cotxe", "quilometratge", "litres", "preu_litre", "cost_total", "consum_l_100", "notes"]],
+        st.dataframe(view[["data", "cotxe", "quilometratge", "km_des_de_repostatge", "litres", "preu_litre", "cost_total", "consum_l_100", "notes"]],
                      use_container_width=True, hide_index=True,
-                     column_config={"data": "Data", "cotxe": "Cotxe", "quilometratge": "Km", "litres": "Litres", "preu_litre": "€/L", "cost_total": st.column_config.NumberColumn("Cost", format="%.2f €"), "consum_l_100": st.column_config.NumberColumn("L/100 km", format="%.2f"), "notes": "Notes"})
+                     column_config={"data": "Data", "cotxe": "Cotxe", "quilometratge": "Km", "km_des_de_repostatge": st.column_config.NumberColumn("Km des de l’anterior", format="%d km"), "litres": "Litres", "preu_litre": "€/L", "cost_total": st.column_config.NumberColumn("Cost", format="%.2f €"), "consum_l_100": st.column_config.NumberColumn("L/100 km", format="%.2f"), "notes": "Notes"})
         st.download_button("Descarrega les dades (CSV)", data.drop(columns=["consum_l_100"]).to_csv(index=False).encode("utf-8"), "repostatges.csv", "text/csv", use_container_width=True)
 
         refill_by_id = {int(row["id"]): row for _, row in history.iterrows()}
